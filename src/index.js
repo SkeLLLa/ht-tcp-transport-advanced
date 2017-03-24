@@ -1,22 +1,21 @@
 import net from 'net';
 import crypto from 'crypto';
+import {encode} from './protocol';
+import chunkDecoder from './chunkDecoder';
 
 function TCPTransportServer (config) {
   let _TCPTransportServer = function (fn) {
     this.server = net.createServer(function (c) {
-      c.on('data', function (_response) {
-        let response = JSON.parse(_response);
-        let { id, name, data } = response;
-
-        fn(name, data, function (error, d) {
-          let response = JSON.stringify({
-            data: d,
-            id,
-            error
-          });
+      c.on('data', chunkDecoder((request) => {
+        fn(request.header.method, request.data, function (error, d) {
+          const response = encode({
+            method: request.header.method,
+            id: request.header.id,
+            data: d
+          }, error);
           c.write(response);
         });
-      });
+      }));
     });
   };
 
@@ -59,27 +58,24 @@ function TCPTransportClient (config) {
   _TCPTransportClient.prototype.connect = function (done) {
     // open a persistent connection to the server
     this.conn = net.createConnection(config.port, config.host);
-    this.conn.setEncoding('utf8');
+    // this.conn.setEncoding(null);
     this.conn.on('connect', () => {
       this.connected = true;
       done();
     });
-    this.conn.on('data', (d) => {
-      let response = JSON.parse(d);
-      let { id, error, data } = response;
 
-      // find callback we stashed
-      let fn = this.fns[id];
+    this.conn.on('data', chunkDecoder((d) => {
+      let fn = this.fns[d.header.id];
       if (!fn) {
         // unknown, drop
         return;
       }
-      if (error) {
-        return fn(error);
+      if (d.header.error) {
+        return fn(d.header.error);
       } else {
-        return fn(null, data);
+        return fn(null, d.data);
       }
-    });
+    }));
   };
 
   _TCPTransportClient.prototype.disconnect = function (done) {
@@ -97,14 +93,13 @@ function TCPTransportClient (config) {
         error: 'disconnected'
       });
     }
-    // Chances of this returning the same id
-    // as one in use is extremely negligible.
-    let id = crypto.randomBytes(10).toString('hex');
-    let request = JSON.stringify({
-      name: method,
-      data,
-      id
+    const id = crypto.randomBytes(10).toString('hex');
+    const request = encode({
+      method,
+      id,
+      data
     });
+
     // stash callback for later
     this.fns[id] = callback;
     this.conn.write(request);

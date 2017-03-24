@@ -4,7 +4,9 @@
   "description": "Hudson-Taylor TCP transport",
   "main": "lib/index.js",
   "scripts": {
-    "test": "semistandard && mocha -r babel-register -R spec --bail",
+    "lint": "semistandard | snazzy",
+    "check": "mocha -r babel-register -R spec --bail",
+    "test": "npm run lint && npm run check",
     "build": "babel src -d lib",
     "prepublish": "npm run build"
   },
@@ -29,7 +31,8 @@
     "babel-register": "^6.5.2",
     "mocha": "^2.4.5",
     "openport": "0.0.4",
-    "semistandard": "^7.0.5"
+    "semistandard": "^7.0.5",
+    "snazzy": "^6.0.0"
   },
   "dependencies": {}
 }

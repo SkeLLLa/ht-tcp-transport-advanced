@@ -1,10 +1,11 @@
 /*global describe, it, before */
 import assert from 'assert';
 import net from 'net';
-
 import openport from 'openport';
 
 import TCP from '../src';
+import * as protocol from '../src/protocol';
+import chunkDecoder from '../src/chunkDecoder';
 
 describe('TCP Transport', function () {
   let transport;
@@ -40,7 +41,8 @@ describe('TCP Transport', function () {
     });
 
     it('should return error if server cannot bind to port', function (done) {
-      let netServer = net.createServer(() => {});
+      let netServer = net.createServer(() => {
+      });
 
       netServer.listen(port, host, function (err) {
         assert.ifError(err);
@@ -111,8 +113,8 @@ describe('TCP Transport', function () {
 
     it('should call fn when request is received', function (done) {
       let _method = 'echo';
-      let _data = { hello: 'world' };
-      let _data2 = { something: 'else' };
+      let _data = {hello: 'world'};
+      let _data2 = {something: 'else'};
 
       server = new transport.Server(function (method, data, callback) {
         assert.equal(method, _method);
@@ -123,23 +125,61 @@ describe('TCP Transport', function () {
       server.listen(function (err) {
         assert.ifError(err);
 
-        let request = JSON.stringify({
-          id: 1,
-          name: _method,
-          data: _data
+        let request = protocol.encode({
+          method: _method,
+          data: _data,
+          id: 1
         });
 
         let clientSocket = net.createConnection(port, host);
         clientSocket.setEncoding('utf8');
         clientSocket.write(request);
 
-        clientSocket.on('data', function (_response) {
+        clientSocket.on('data', chunkDecoder((response) => {
           clientSocket.end();
-          let response = JSON.parse(_response);
           assert.ifError(response.error);
           assert.deepEqual(response.data, _data2);
           server.stop(done);
+        }));
+      });
+    });
+
+    it('should handle TCP fragmentation', function (done) {
+      let _method = 'echo';
+      const MAX_MTU = 65535; // loopback interface MTU
+      let _data = '';
+      let _data2 = '';
+      for (let i = 0; i < MAX_MTU / 2; i++) {
+        _data += `A${i}.`;
+        _data2 += `B${i}.`;
+      }
+      _data = Buffer.from(_data);
+      _data2 = Buffer.from(_data2);
+
+      server = new transport.Server(function (method, data, callback) {
+        assert.equal(method, _method);
+        assert.equal(Buffer.compare(data, _data), 0);
+        callback(null, _data2);
+      });
+
+      server.listen(function (err) {
+        assert.ifError(err);
+
+        let request = protocol.encode({
+          method: _method,
+          data: _data,
+          id: 1
         });
+
+        let clientSocket = net.createConnection(port, host);
+        clientSocket.write(request);
+
+        clientSocket.on('data', chunkDecoder((response) => {
+          clientSocket.end();
+          assert.ifError(response.error);
+          assert.equal(Buffer.compare(response.data, _data2), 0);
+          server.stop(done);
+        }));
       });
     });
   });
@@ -177,18 +217,16 @@ describe('TCP Transport', function () {
 
     it('should be able to call method', function (done) {
       let _method = 'hello';
-      let _data = { something: 'world' };
+      let _data = 'world';
 
       let netServer = net.createServer(function (socket) {
-        socket.setEncoding('utf8');
-        socket.on('data', function (_data) {
-          var data = JSON.parse(_data);
-          socket.end(JSON.stringify({
-            id: data.id,
-            data: data.data,
-            error: null
-          }));
-        });
+        socket.on('data', chunkDecoder((response) => {
+          socket.end(protocol.encode({
+            method: response.header.method,
+            id: response.header.id,
+            data: response.data
+          }, null));
+        }));
       });
 
       let client = new transport.Client();
@@ -238,15 +276,13 @@ describe('TCP Transport', function () {
       let _err = 'err!';
 
       let netServer = net.createServer(function (socket) {
-        socket.setEncoding('utf8');
-        socket.on('data', function (_data) {
-          var data = JSON.parse(_data);
-          socket.end(JSON.stringify({
-            id: data.id,
-            data: null,
-            error: _err
-          }));
-        });
+        socket.on('data', chunkDecoder((response) => {
+          socket.end(protocol.encode({
+            method: response.header.method,
+            id: response.header.id,
+            data: response.data
+          }, _err));
+        }));
       });
 
       let client = new transport.Client();
