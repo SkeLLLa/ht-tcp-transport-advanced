@@ -153,12 +153,10 @@ describe('TCP Transport', function () {
         _data += `A${i}.`;
         _data2 += `B${i}.`;
       }
-      _data = Buffer.from(_data);
-      _data2 = Buffer.from(_data2);
 
       server = new transport.Server(function (method, data, callback) {
         assert.equal(method, _method);
-        assert.equal(Buffer.compare(data, _data), 0);
+        assert.equal(data, _data);
         callback(null, _data2);
       });
 
@@ -177,7 +175,7 @@ describe('TCP Transport', function () {
         clientSocket.on('data', chunkDecoder((response) => {
           clientSocket.end();
           assert.ifError(response.error);
-          assert.equal(Buffer.compare(response.data, _data2), 0);
+          assert.equal(response.data, _data2, 0);
           server.stop(done);
         }));
       });

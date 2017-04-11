@@ -9,8 +9,7 @@ const PACKET_END = '\u0004';
 const HEADER_DELIMITER = '/';
 const FORMAT = {
   'JSON': 1,
-  'BINARY': 2,
-  'TEXT': 3
+  'TEXT': 2
 };
 
 export const CONSTANTS = {
@@ -23,9 +22,7 @@ export const CONSTANTS = {
 
 export const encode = ({method, data, id}, error) => {
   id = id || crypto.randomBytes(10).toString('hex');
-  const format = Buffer.isBuffer(data)
-    ? CONSTANTS.FORMAT.BINARY
-    : typeof data === 'string'
+  const format = typeof data === 'string'
       ? CONSTANTS.FORMAT.TEXT
       : CONSTANTS.FORMAT.JSON;
 
@@ -34,9 +31,6 @@ export const encode = ({method, data, id}, error) => {
   switch (format) {
     case FORMAT.JSON:
       dataBuf = Buffer.from(JSON.stringify(data));
-      break;
-    case FORMAT.BINARY:
-      dataBuf = data;
       break;
     case FORMAT.TEXT:
       dataBuf = Buffer.from(data);
@@ -65,16 +59,10 @@ export const decode = (packet) => {
   let [id, method, dataLength, format, errString] = packet.slice(headerIndex.start, headerIndex.end).toString().split(HEADER_DELIMITER);
   format = parseInt(format, 10);
   dataLength = parseInt(dataLength, 10);
-  // if (dataIndex.end - dataIndex.start !== dataLength) {
-  //   return null;
-  // }
   let data;
   switch (format) {
     case FORMAT.JSON:
       data = JSON.parse(packet.slice(dataIndex.start, dataIndex.end).toString());
-      break;
-    case FORMAT.BINARY:
-      data = packet.slice(dataIndex.start, dataIndex.end);
       break;
     case FORMAT.TEXT:
       data = packet.slice(dataIndex.start, dataIndex.end).toString();
